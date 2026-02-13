@@ -1,124 +1,104 @@
-// We import useState because this component needs to store and update data
+/**
+ * PlanBuilder
+ *
+ * PURPOSE:
+ * - Page where the user creates a daily plan
+ * - Owns state for start location and stops
+ * - Adds/removes stops
+ * - Calculates derived totals
+ *
+ * ARCHITECTURE:
+ * - State + business logic live here
+ * - UI is split into reusable components:
+ *   - StopForm (inputs)
+ *   - StopList (display list)
+ */
+
 import { useState } from "react";
+import StopForm from "../components/StopForm";
+import StopList from "../components/StopList";
 
 export default function PlanBuilder() {
-
-  // ===============================
-  // STATE SECTION
-  // ===============================
-
-  // Holds the start location entered by the user
+  // Start location input state
   const [startLocation, setStartLocation] = useState("");
 
-  // Holds the current stop address input value
+  // Stop form input state (controlled inputs)
   const [stopAddress, setStopAddress] = useState("");
-
-  // Holds the current minutes input value
   const [stopMinutes, setStopMinutes] = useState("");
 
-  // Holds the array of all added stops
-  // Each stop will be an object: { id, address, minutes }
+  /**
+   * stops = source of truth for all added stops.
+   * Each stop:
+   * { id: number, address: string, minutes: number }
+   */
   const [stops, setStops] = useState([]);
 
-  // ===============================
-  // EVENT HANDLERS
-  // ===============================
-
-  // Adds a new stop to the stops array
+  /**
+   * handleAddStop
+   * - Validates input
+   * - Creates a new stop object
+   * - Updates stops immutably (new array)
+   */
   function handleAddStop() {
-
-    // Prevent adding empty values
     if (!stopAddress || !stopMinutes) return;
 
-    // Create a new stop object
     const newStop = {
-      id: Date.now(), // simple unique id based on timestamp
+      id: Date.now(), // simple unique id (ok for Project 1)
       address: stopAddress,
-      minutes: Number(stopMinutes), // convert string to number
+      minutes: Number(stopMinutes),
     };
 
-    // Update state immutably (DO NOT mutate stops directly)
-    // We create a new array containing previous stops + new stop
+    // Immutable state update: create a new array
     setStops([...stops, newStop]);
 
-    // Clear input fields after adding
+    // Clear the form fields
     setStopAddress("");
     setStopMinutes("");
   }
 
-  // Removes a stop by filtering it out
+  /**
+   * handleRemoveStop
+   * - Removes a stop by id using filter()
+   * - filter() returns a NEW array (immutable update)
+   */
   function handleRemoveStop(id) {
-
-    // Create a new array without the stop matching the id
     const updatedStops = stops.filter((stop) => stop.id !== id);
-
-    // Update state with new filtered array
     setStops(updatedStops);
   }
 
-  // ===============================
-  // DERIVED VALUE
-  // ===============================
-
-  // totalMinutes is NOT stored in state
-  // It is derived from the stops array
-  // This prevents duplicated state and inconsistencies
-  const totalMinutes = stops.reduce(
-    (sum, stop) => sum + stop.minutes,
-    0
-  );
-
-  // ===============================
-  // RENDER SECTION (JSX)
-  // ===============================
+  /**
+   * Derived value:
+   * - Not stored in state to avoid duplicated state bugs
+   * - Always stays consistent with stops
+   */
+  const totalMinutes = stops.reduce((sum, stop) => sum + stop.minutes, 0);
 
   return (
     <div className="page">
       <h1>Create Day Plan</h1>
 
-      {/* Controlled input for start location */}
+      {/* Start Location (controlled input) */}
       <h3>Start Location</h3>
       <input
         type="text"
         placeholder="Enter start address"
-        value={startLocation} // value comes from state
-        onChange={(e) => setStartLocation(e.target.value)} // update state on change
+        value={startLocation}
+        onChange={(e) => setStartLocation(e.target.value)}
       />
 
-      {/* Controlled inputs for adding a stop */}
-      <h3>Add Stop</h3>
-      <input
-        type="text"
-        placeholder="Stop address"
-        value={stopAddress}
-        onChange={(e) => setStopAddress(e.target.value)}
+      {/* StopForm: receives controlled input values + setters + submit callback */}
+      <StopForm
+        stopAddress={stopAddress}
+        setStopAddress={setStopAddress}
+        stopMinutes={stopMinutes}
+        setStopMinutes={setStopMinutes}
+        onAddStop={handleAddStop}
       />
 
-      <input
-        type="number"
-        placeholder="Minutes on site"
-        value={stopMinutes}
-        onChange={(e) => setStopMinutes(e.target.value)}
-      />
+      {/* StopList: receives the stops data + remove callback */}
+      <StopList stops={stops} onRemove={handleRemoveStop} />
 
-      <button onClick={handleAddStop}>
-        Add Stop
-      </button>
-
-      {/* Render list of stops dynamically */}
-      <h3>Stops</h3>
-      <ul>
-        {stops.map((stop) => (
-          <li key={stop.id}>
-            {stop.address} — {stop.minutes} minutes
-            <button onClick={() => handleRemoveStop(stop.id)}>
-              Remove
-            </button>
-          </li>
-        ))}
-      </ul>
-
-      {/* Display derived total */}
+      {/* Derived total display */}
       <h3>Total Service Time: {totalMinutes} minutes</h3>
     </div>
   );
