@@ -2,26 +2,45 @@
  * StopForm
  *
  * PURPOSE:
- * - Collect stop address + minutes-on-site from the user
- * - Notify the parent when the user wants to add a stop
+ * - Collect stop address parts (street/city/state/zip) + minutes-on-site
+ * - This makes geocoding much more reliable because we can build a consistent
+ *   formatted address string with commas and a 2-letter state code.
  *
  * DESIGN:
- * - This is a "controlled form" component.
- * - It does NOT own the stops array.
- * - It receives the current input values + setters via props.
+ * - Controlled inputs driven by parent state
+ * - Does NOT own the stops array
+ * - Calls parent callback on submit
  */
 
 export default function StopForm({
-  stopAddress,
-  setStopAddress,
+  stopStreet,
+  setStopStreet,
+  stopCity,
+  setStopCity,
+  stopState,
+  setStopState,
+  stopZip,
+  setStopZip,
   stopMinutes,
   setStopMinutes,
   onAddStop,
 }) {
   /**
+   * UI-level validation:
+   * Disable submit unless inputs are complete.
+   * Parent still performs final validation as source of truth.
+   */
+  const canSubmit =
+    stopStreet.trim().length > 0 &&
+    stopCity.trim().length > 0 &&
+    stopState.trim().length > 0 &&
+    stopZip.trim().length > 0 &&
+    Number(stopMinutes) > 0;
+
+  /**
    * handleSubmit
-   * - Prevents the browser from refreshing the page on form submit
-   * - Calls the parent callback that actually adds the stop
+   * - Prevents full page reload
+   * - Calls parent callback to add a stop
    */
   function handleSubmit(e) {
     e.preventDefault();
@@ -32,25 +51,56 @@ export default function StopForm({
     <form onSubmit={handleSubmit}>
       <h3>Add Stop</h3>
 
-      {/* Controlled input: value comes from parent state */}
+      {/* Street */}
       <input
         type="text"
-        placeholder="Stop address"
-        value={stopAddress}
-        onChange={(e) => setStopAddress(e.target.value)}
+        placeholder="Street address (e.g., 123 Main St)"
+        value={stopStreet}
+        onChange={(e) => setStopStreet(e.target.value)}
+        required
       />
 
-      {/* Controlled input: value comes from parent state */}
+      {/* City */}
+      <input
+        type="text"
+        placeholder="City (e.g., Boca Raton)"
+        value={stopCity}
+        onChange={(e) => setStopCity(e.target.value)}
+        required
+      />
+
+      {/* State */}
+      <input
+        type="text"
+        placeholder="State (e.g., FL)"
+        value={stopState}
+        onChange={(e) => setStopState(e.target.value)}
+        maxLength={2}
+        required
+      />
+
+      {/* ZIP */}
+      <input
+        type="text"
+        placeholder="ZIP (e.g., 33428)"
+        value={stopZip}
+        onChange={(e) => setStopZip(e.target.value)}
+        required
+      />
+
+      {/* Minutes */}
       <input
         type="number"
         placeholder="Minutes on site"
         value={stopMinutes}
         onChange={(e) => setStopMinutes(e.target.value)}
-        min="0"
+        min="1"
+        required
       />
 
-      {/* Submitting the form allows "Enter" key to add a stop (nice UX) */}
-      <button type="submit">Add Stop</button>
+      <button type="submit" disabled={!canSubmit}>
+        Add Stop
+      </button>
     </form>
   );
 }
