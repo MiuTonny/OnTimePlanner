@@ -6,11 +6,11 @@
  *
  * API:
  * - OSRM Route Service
- *   /route/v1/driving/{lon,lat;lon,lat;...} :contentReference[oaicite:4]{index=4}
+ *   /route/v1/driving/{lon,lat;lon,lat;...}
  *
  * NOTES:
  * - router.project-osrm.org is a DEMO server (ok for student demo).
- *   Not for heavy production usage. :contentReference[oaicite:5]{index=5}
+ *   Not for heavy production usage.
  */
 
 const OSRM_BASE = "https://router.project-osrm.org";
@@ -32,10 +32,13 @@ export async function getRouteStats(coords) {
 
   const url = `${OSRM_BASE}/route/v1/driving/${coordString}?overview=false&steps=false`;
 
-  const res = await fetch(url);
+  const res = await fetch(url, {
+    headers: { Accept: "application/json" },
+  });
 
   if (!res.ok) {
-    throw new Error(`Routing failed (${res.status})`);
+    const text = await res.text().catch(() => "");
+    throw new Error(`Routing failed (${res.status}) ${text.slice(0, 120)}`.trim());
   }
 
   const data = await res.json();
@@ -47,7 +50,7 @@ export async function getRouteStats(coords) {
   const route = data.routes[0];
 
   return {
-    distanceMeters: route.distance,
-    durationSeconds: route.duration,
+    distanceMeters: Number(route.distance || 0),
+    durationSeconds: Number(route.duration || 0),
   };
 }

@@ -146,7 +146,7 @@ export default function PlanResults() {
             // 4) Call routing API (OSRM)
             return await getRouteStats(coordsForRoute);
           })(),
-          12000,
+          30000,
           "Route lookup timed out. Try fewer stops or try again."
         );
 

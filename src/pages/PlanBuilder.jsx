@@ -139,7 +139,7 @@ export default function PlanBuilder() {
     navigate(`/plan/${planId}`);
   }
 
-  // Right panel "map preview" — we’ll improve later (iframe/real map)
+  // Right panel "map preview" — i’ll improve later (iframe/real map)
   const previewQuery = encodeURIComponent(
     startIsValid
       ? formatAddress({
@@ -179,13 +179,13 @@ export default function PlanBuilder() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <input
                 type="text"
-                placeholder="Street (e.g., 10757 Shady Pond Ln)"
+                placeholder="Street (e.g., 123456)"
                 value={startStreet}
                 onChange={(e) => setStartStreet(e.target.value)}
               />
               <input
                 type="text"
-                placeholder="City (e.g., Boca Raton)"
+                placeholder="City (e.g., Miami)"
                 value={startCity}
                 onChange={(e) => setStartCity(e.target.value)}
               />
@@ -198,7 +198,7 @@ export default function PlanBuilder() {
               />
               <input
                 type="text"
-                placeholder="ZIP (33428)"
+                placeholder="ZIP (33060)"
                 value={startZip}
                 onChange={(e) => setStartZip(e.target.value)}
                 maxLength={5}
@@ -326,11 +326,11 @@ export default function PlanBuilder() {
         <div className="card">
           <h2 style={{ marginTop: 0 }}>Map Preview</h2>
           <p className="muted">
-            We’ll enhance this panel next (embed map / route preview).
+            i'll enhance this panel next (embed map / route preview).
           </p>
 
           <div style={{ border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, overflow: "hidden" }}>
-            {/* Quick embed (simple preview). We’ll upgrade later. */}
+            {/* Quick embed (simple preview). i'll upgrade later. */}
             <iframe
               title="Map Preview"
               width="100%"

@@ -9,9 +9,14 @@
  * 1) Try full structured address (street includes house number)
  * 2) If that fails, remove leading house number and try again
  * 3) If that fails, fall back to city/state/zip area lookup
+ *
+ * IMPORTANT (Project 1 Dev Setup):
+ * - call "/nominatim/search" instead of the full domain.
+ * - Vite proxy forwards this to https://nominatim.openstreetmap.org
+ * - This avoids CORS issues in the browser.
  */
 
-const NOMINATIM_BASE = "https://nominatim.openstreetmap.org/search";
+const NOMINATIM_BASE = "/nominatim/search";
 
 async function nominatimSearch(paramsObj) {
   const params = new URLSearchParams({
@@ -25,7 +30,10 @@ async function nominatimSearch(paramsObj) {
 
   const res = await fetch(url, {
     headers: {
-      "User-Agent": "OnTimePlanner/1.0 (student project; github.com/MiuTonny)",
+      Accept: "application/json",
+      // NOTE:
+      // We do NOT set "User-Agent" here because browsers forbid it.
+      // If using a backend proxy in production, User-Agent should be set there.
     },
   });
 
@@ -118,5 +126,6 @@ export async function geocodeAddress(address) {
     throw new Error(`No geocoding results for: "${q}"`);
   }
 
-  return { ...hit, usedFallback: false };
+  // Free-form geocode is considered fallback behavior
+  return { ...hit, usedFallback: true };
 }
