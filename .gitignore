@@ -2,3 +2,20 @@ node_modules
 dist
 .env
 
+# --- Python / Flask ---
+server/.venv/
+server/__pycache__/
+server/app/__pycache__/
+*.pyc
+
+# Flask instance + sqlite DB (usually local only)
+server/instance/
+*.db
+
+# --- Node / React ---
+node_modules/
+dist/
+
+# --- OS / Editor ---
+.DS_Store
+.vscode/
