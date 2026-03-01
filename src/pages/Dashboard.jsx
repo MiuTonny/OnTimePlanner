@@ -18,7 +18,7 @@
 
 import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
-import { getPlans, removePlan } from "../utils/storage";
+import { fetchPlans, deletePlan } from "../services/api";
 
 /**
  * Format minutes as "1 hr 23 min" (better UX than raw minutes).
@@ -63,9 +63,13 @@ export default function Dashboard() {
    * loadPlans
    * - helper so we can reuse it on first render + after deletes + on refresh button
    */
-  function loadPlans() {
-    const stored = getPlans();
-    setPlans(stored);
+  async function loadPlans() {
+    try {
+      const stored = await fetchPlans();
+      setPlans(stored);
+    } catch (err) {
+      console.error(err);
+    }
   }
 
   /**
@@ -82,9 +86,13 @@ export default function Dashboard() {
    * - removePlan writes to localStorage but does NOT return the updated list
    * - so we reload plans afterward to keep UI in sync
    */
-  function handleDelete(planId) {
-    removePlan(planId);
-    loadPlans();
+  async function handleDelete(planId) {
+    try {
+      await deletePlan(planId);
+      loadPlans();
+    } catch (err) {
+      alert(err.message || "Delete failed.");
+    }
   }
 
   /**

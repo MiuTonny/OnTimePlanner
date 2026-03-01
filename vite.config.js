@@ -5,12 +5,14 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
+      "/api": {
+        target: "http://localhost:5555",
+        changeOrigin: true,
+      },
       "/nominatim": {
         target: "https://nominatim.openstreetmap.org",
         changeOrigin: true,
-        // optional but helps some providers:
         headers: {
-          // Can't truly set browser User-Agent, but proxy can send headers
           "Accept-Language": "en",
         },
         rewrite: (path) => path.replace(/^\/nominatim/, ""),
