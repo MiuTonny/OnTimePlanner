@@ -1,8 +1,19 @@
 from flask import Blueprint, request, jsonify
+from datetime import datetime
+
 from .. import db
-from ..models import Plan, Stop
+from ..models import Plan, Stop, PlanMetrics
+from ..services.geocode import geocode_structured
+from ..services.routing import get_route_stats
 
 plans_bp = Blueprint("plans", __name__)
+
+def minutes_from_seconds(sec):
+    return round(sec / 60)
+
+def miles_from_meters(m):
+    return m * 0.000621371
+
 
 @plans_bp.get("/plans")
 def list_plans():
@@ -68,3 +79,81 @@ def delete_plan(plan_id):
     db.session.delete(plan)
     db.session.commit()
     return jsonify({"ok": True}), 200
+
+@plans_bp.post("/plans/<int:plan_id>/compute-metrics")
+def compute_metrics(plan_id):
+    plan = Plan.query.get(plan_id)
+    if not plan:
+        return jsonify({"error": "Plan not found"}), 404
+
+    try:
+        start_parts = {
+            "street": plan.start_street,
+            "city": plan.start_city,
+            "state": plan.start_state,
+            "zip": plan.start_zip,
+        }
+
+        start_result = geocode_structured(start_parts)
+
+        ordered_stops = sorted(plan.stops, key=lambda s: s.order_index)
+        stop_results = []
+
+        for stop in ordered_stops:
+            stop_parts = {
+                "street": stop.street,
+                "city": stop.city,
+                "state": stop.state,
+                "zip": stop.zip,
+            }
+            stop_results.append(geocode_structured(stop_parts))
+
+        coords = [
+            {"lat": start_result["lat"], "lon": start_result["lon"]},
+            *[
+                {"lat": r["lat"], "lon": r["lon"]}
+                for r in stop_results
+            ],
+        ]
+
+        stats = get_route_stats(coords)
+
+        drive_minutes = minutes_from_seconds(stats["durationSeconds"])
+        miles = miles_from_meters(stats["distanceMeters"])
+
+        base_service_minutes = sum(int(s.minutes or 0) for s in ordered_stops)
+
+        # temporary defaults until Goals moves to backend
+        buffer_per_stop = 0
+        mpg = 25
+        gas_price = 3.5
+
+        buffer_total = buffer_per_stop * len(ordered_stops)
+        service_minutes = base_service_minutes + buffer_total
+        total_minutes = service_minutes + drive_minutes
+        gallons = (miles / mpg) if mpg > 0 else 0
+        gas_cost = gallons * gas_price
+
+        metrics = plan.metrics
+        if not metrics:
+            metrics = PlanMetrics(plan_id=plan.id)
+            db.session.add(metrics)
+
+        metrics.distance_meters = stats["distanceMeters"]
+        metrics.duration_seconds = stats["durationSeconds"]
+        metrics.miles = miles
+        metrics.drive_minutes = drive_minutes
+        metrics.service_minutes = service_minutes
+        metrics.total_minutes = total_minutes
+        metrics.gallons = gallons
+        metrics.gas_cost = gas_cost
+        metrics.mpg = mpg
+        metrics.gas_price = gas_price
+        metrics.buffer_minutes = buffer_per_stop
+        metrics.updated_at = datetime.utcnow()
+
+        db.session.commit()
+        return jsonify(plan.to_dict()), 200
+
+    except Exception as err:
+        return jsonify({"error": str(err)}), 500

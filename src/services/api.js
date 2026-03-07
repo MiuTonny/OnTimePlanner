@@ -38,3 +38,9 @@ export function createPlan(plan) {
 export function deletePlan(planId) {
   return request(`/api/plans/${planId}`, { method: "DELETE" });
 }
+
+export function computePlanMetrics(planId) {
+  return request(`/api/plans/${planId}/compute-metrics`, {
+    method: "POST",
+  });
+}

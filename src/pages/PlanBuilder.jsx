@@ -13,7 +13,7 @@
 
 import { useMemo, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { addPlan } from "../utils/storage";
+import { createPlan } from "../services/api";
 
 /**
  * formatAddress
@@ -114,7 +114,7 @@ export default function PlanBuilder() {
     setStops(stops.filter((s) => s.id !== id));
   }
 
-  function handleSavePlan() {
+  async function handleSavePlan() {
     if (!canSave) return;
 
     const startParts = {
@@ -124,19 +124,19 @@ export default function PlanBuilder() {
       zip: startZip.trim(),
     };
 
-    const planId = String(Date.now());
-
-    const plan = {
-      id: planId,
+    const planPayload = {
       name: planName.trim(),
       startLocation: formatAddress(startParts),
-      startParts, // ✅ structured for geocoding
+      startParts,
       stops,
-      createdAt: new Date().toISOString(),
     };
 
-    addPlan(plan);
-    navigate(`/plan/${planId}`);
+    try {
+      const saved = await createPlan(planPayload);
+      navigate(`/plan/${saved.id}`);
+    } catch (err) {
+      alert(err.message || "Failed to save plan.");
+    }
   }
 
   // Right panel "map preview" — i’ll improve later (iframe/real map)

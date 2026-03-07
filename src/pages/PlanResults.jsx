@@ -21,19 +21,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { getPlans, getGoals, updatePlan } from "../utils/storage";
-import { geocodeStructured, geocodeAddress } from "../services/geocode";
-import { getRouteStats } from "../services/routing";
-
-/** Convert seconds → minutes (rounded). */
-function minutesFromSeconds(sec) {
-  return Math.round(sec / 60);
-}
-
-/** Convert meters → miles. */
-function milesFromMeters(m) {
-  return m * 0.000621371;
-}
+import { fetchPlan, computePlanMetrics } from "../services/api";
 
 /** Format minutes into a readable string: 83 → "1 hr 23 min". */
 function formatDuration(totalMinutes) {
@@ -43,51 +31,40 @@ function formatDuration(totalMinutes) {
   if (m === 0) return `${h} hr`;
   return `${h} hr ${m} min`;
 }
-
-/**
- * withTimeout
- * - Wrap a promise so it errors if it takes too long
- * - Useful because public APIs can be slow sometimes
- */
-function withTimeout(promise, ms, message = "Request timed out.") {
-  return new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(message)), ms);
-    promise
-      .then((v) => {
-        clearTimeout(t);
-        resolve(v);
-      })
-      .catch((e) => {
-        clearTimeout(t);
-        reject(e);
-      });
-  });
-}
-
 export default function PlanResults() {
   const { id } = useParams();
 
-  // Plan is loaded from localStorage and stored in React state
+  // Plan is loaded from backend and stored in React state
   const [plan, setPlan] = useState(null);
 
   // Async UI states
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Routing results returned from API
-  const [routeStats, setRouteStats] = useState(null);
-
-  // Notes when we approximate addresses (house number missing, etc.)
-  const [geoWarnings, setGeoWarnings] = useState([]);
-
   /**
    * Load the plan whenever the route id changes
    * This avoids effects depending on unstable object references.
    */
   useEffect(() => {
-    const plans = getPlans();
-    const found = plans.find((p) => p.id === id) || null;
-    setPlan(found);
+    let cancelled = false;
+
+    async function loadPlan() {
+      try {
+        const found = await fetchPlan(id);
+        if (!cancelled) setPlan(found);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err.message || "Failed to load plan.");
+          setPlan(null);
+        }
+      }
+    }
+
+    loadPlan();
+
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   /**
@@ -110,110 +87,39 @@ export default function PlanResults() {
     async function run() {
       setLoading(true);
       setError("");
-      setRouteStats(null);
-      setGeoWarnings([]);
 
       try {
-        const stats = await withTimeout(
-          (async () => {
-            // 1) Geocode start (prefer structured)
-            const startResult = plan.startParts
-              ? await geocodeStructured(plan.startParts)
-              : await geocodeAddress(plan.startLocation);
+        const updated = await computePlanMetrics(plan.id);
 
-            // 2) Geocode stops in parallel
-            const stopResults = await Promise.all(
-              plan.stops.map((s) =>
-                s.parts ? geocodeStructured(s.parts) : geocodeAddress(s.address)
-              )
-            );
-
-            // Build warnings if any geocodes used fallback
-            const warnings = [];
-            if (startResult.usedFallback) warnings.push("Start location was approximated for routing.");
-            stopResults.forEach((r, idx) => {
-              if (r.usedFallback) warnings.push(`Stop ${idx + 1} was approximated for routing.`);
-            });
-
-            if (!cancelled) setGeoWarnings(warnings);
-
-            // 3) Build coordinate list for routing API
-            const coordsForRoute = [
-              { lat: startResult.lat, lon: startResult.lon },
-              ...stopResults.map((c) => ({ lat: c.lat, lon: c.lon })),
-            ];
-
-            // 4) Call routing API (OSRM)
-            return await getRouteStats(coordsForRoute);
-          })(),
-          30000,
-          "Route lookup timed out. Try fewer stops or try again."
-        );
-
-        // Only update state + storage if still mounted
         if (!cancelled) {
-          setRouteStats(stats);
-
-          /**
-           * Compute and persist metrics for aggregation:
-           * - driveMinutes, miles from API
-           * - buffer/time/cost from Goals
-           */
-          const goals = getGoals();
-
-          const driveMinutesNow = minutesFromSeconds(stats.durationSeconds);
-          const milesNow = milesFromMeters(stats.distanceMeters);
-
-          // Buffer time: overhead per stop (NOT drive time)
-          const bufferPerStop = Number(goals.bufferMinutes) || 0;
-          const bufferTotal = bufferPerStop * plan.stops.length;
-
-          const serviceMinutesNow = baseServiceMinutes + bufferTotal;
-          const totalMinutesNow = serviceMinutesNow + driveMinutesNow;
-
-          // Gas cost estimate
-          const mpg = Number(goals.mpg) || 25;
-          const gasPrice = Number(goals.gasPrice) || 0;
-          const gallons = mpg > 0 ? milesNow / mpg : 0;
-          const gasCostNow = gallons * gasPrice;
-
-          const updated = {
-            ...plan,
-            metrics: {
-              miles: milesNow,
-              driveMinutes: driveMinutesNow,
-              serviceMinutes: serviceMinutesNow,
-              totalMinutes: totalMinutesNow,
-              gallons,
-              gasCost: gasCostNow,
-              gasPrice,
-              mpg,
-              bufferMinutes: bufferPerStop,
-              updatedAt: new Date().toISOString(),
-            },
-          };
-
-          // Persist to localStorage for Dashboard weekly totals
-          updatePlan(updated);
-
-          // Also update local state so UI can show metrics immediately
           setPlan(updated);
         }
+
       } catch (err) {
+
         if (!cancelled) {
-          setError(err.message || "Failed to load route details.");
+          setError(err.message || "Failed to compute route details.");
         }
+
       } finally {
-        if (!cancelled) setLoading(false);
+
+        if (!cancelled) {
+          setLoading(false);
+        }
+
       }
     }
 
-    run();
+    if (!plan.metrics) {
+      run();
+    }
 
     return () => {
       cancelled = true;
     };
-  }, [plan?.id, baseServiceMinutes]);
+
+  }, [plan?.id, plan?.metrics]);
+
 
   /**
    * If the plan doesn't exist, show a friendly message
@@ -240,15 +146,11 @@ export default function PlanResults() {
   const driveMinutes =
     metrics && typeof metrics.driveMinutes === "number"
       ? metrics.driveMinutes
-      : routeStats
-      ? minutesFromSeconds(routeStats.durationSeconds)
       : 0;
 
   const miles =
     metrics && typeof metrics.miles === "number"
       ? metrics.miles
-      : routeStats
-      ? milesFromMeters(routeStats.distanceMeters)
       : 0;
 
   const serviceMinutes =
@@ -262,7 +164,10 @@ export default function PlanResults() {
       : serviceMinutes + driveMinutes;
 
   const gasCost =
-    metrics && typeof metrics.gasCost === "number" ? metrics.gasCost : null;
+    metrics && typeof metrics.gasCost === "number"
+      ? metrics.gasCost
+      : null;
+
 
   return (
     <div className="page">
@@ -290,18 +195,7 @@ export default function PlanResults() {
 
       {!loading && error && <p style={{ color: "crimson" }}>Error: {error}</p>}
 
-      {!loading && !error && geoWarnings.length > 0 && (
-        <div className="warn" style={{ marginTop: 10 }}>
-          <p style={{ fontWeight: 700, marginTop: 0 }}>Address notes</p>
-          <ul style={{ margin: 0, paddingLeft: 18 }}>
-            {geoWarnings.map((w, i) => (
-              <li key={i}>{w}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {!loading && !error && routeStats && (
+      {!loading && !error && metrics && (
         <ul>
           <li>
             <strong>Service time:</strong> {formatDuration(serviceMinutes)}
