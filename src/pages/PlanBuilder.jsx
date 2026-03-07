@@ -8,7 +8,6 @@
  * PURPOSE:
  * - Build a plan with a start location + multiple stops
  * - Store structured address parts for reliable geocoding
- * - Save plan to localStorage and navigate to results
  */
 
 import { useMemo, useState } from "react";

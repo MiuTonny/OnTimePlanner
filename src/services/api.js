@@ -44,3 +44,14 @@ export function computePlanMetrics(planId) {
     method: "POST",
   });
 }
+
+export function fetchGoals() {
+  return request("/api/goals");
+}
+
+export function updateGoals(payload) {
+  return request("/api/goals", {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}

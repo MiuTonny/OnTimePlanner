@@ -19,6 +19,10 @@ def create_app():
 
     # register routes
     from .routes.plans import plans_bp
+    from .routes.goals import goals_bp
+
     app.register_blueprint(plans_bp, url_prefix="/api")
+    app.register_blueprint(goals_bp, url_prefix="/api")
+
 
     return app

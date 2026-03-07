@@ -19,3 +19,20 @@ dist/
 # --- OS / Editor ---
 .DS_Store
 .vscode/
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environments
+.venv/
+venv/
+
+# Flask instance folder (local DB)
+instance/
+*.db
+
+# Node
+node_modules/
+
+# Vite build
+dist/

@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify
 from datetime import datetime
 
 from .. import db
-from ..models import Plan, Stop, PlanMetrics
+from ..models import Plan, Stop, PlanMetrics, GoalSettings
 from ..services.geocode import geocode_structured
 from ..services.routing import get_route_stats
 
@@ -124,9 +124,11 @@ def compute_metrics(plan_id):
         base_service_minutes = sum(int(s.minutes or 0) for s in ordered_stops)
 
         # temporary defaults until Goals moves to backend
-        buffer_per_stop = 0
-        mpg = 25
-        gas_price = 3.5
+        settings = GoalSettings.query.first()
+
+        buffer_per_stop = settings.buffer_minutes if settings else 0
+        mpg = settings.mpg if settings else 25
+        gas_price = settings.gas_price if settings else 3.5
 
         buffer_total = buffer_per_stop * len(ordered_stops)
         service_minutes = base_service_minutes + buffer_total
