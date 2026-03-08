@@ -28,7 +28,7 @@ export default function StepHeader() {
         </div>
       </NavLink>
 
-      <NavLink to="/" className={linkClass}>
+      <NavLink to="/dashboard" className={linkClass}>
         <span className="stepnum">3</span>
         <div>
           <div className="steptitle">Results</div>

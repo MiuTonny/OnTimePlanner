@@ -3,31 +3,45 @@
  *
  * UI GOAL:
  * - Route-planner style "Addresses" step
- * - Spreadsheet-like stop entry table (like MyRouteOnline)
+ * - Spreadsheet-like stop entry table
+ * - Keep the main planning flow on one page
  *
  * PURPOSE:
  * - Build a plan with a start location + multiple stops
  * - Store structured address parts for reliable geocoding
+ * - Allow quick editing of advanced route settings without leaving the page
+ * - Save plan to backend API and navigate to results
+ *
+ * WHY THIS MATTERS:
+ * - Reduces friction compared to sending the user to a separate Goals page
+ * - Keeps route-building assumptions close to where the route is created
+ * - Improves the overall user flow for demo and presentation
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { createPlan } from "../services/api";
+import { createPlan, fetchGoals, updateGoals } from "../services/api";
 
 /**
  * formatAddress
- * - "street, city, ST zip"
- * Used for display + string fallback
+ * - Build a display-friendly address string
+ * - Example: "street, city, ST zip"
  */
 function formatAddress({ street, city, state, zip }) {
   const st = state.trim().toUpperCase();
   return `${street.trim()}, ${city.trim()}, ${st} ${zip.trim()}`;
 }
 
+/**
+ * Basic ZIP validation
+ */
 function isValidZip(zip) {
   return /^\d{5}$/.test(zip.trim());
 }
 
+/**
+ * Basic state validation
+ */
 function isValidState(state) {
   return /^[A-Za-z]{2}$/.test(state.trim());
 }
@@ -35,16 +49,22 @@ function isValidState(state) {
 export default function PlanBuilder() {
   const navigate = useNavigate();
 
-  // Plan name
+  /**
+   * Plan identity
+   */
   const [planName, setPlanName] = useState("");
 
-  // Start address parts
+  /**
+   * Start address parts
+   */
   const [startStreet, setStartStreet] = useState("");
   const [startCity, setStartCity] = useState("");
   const [startState, setStartState] = useState("");
   const [startZip, setStartZip] = useState("");
 
-  // "New stop" row (spreadsheet-like entry)
+  /**
+   * "New stop" entry row
+   */
   const [stopStreet, setStopStreet] = useState("");
   const [stopCity, setStopCity] = useState("");
   const [stopState, setStopState] = useState("");
@@ -52,18 +72,33 @@ export default function PlanBuilder() {
   const [stopMinutes, setStopMinutes] = useState("");
 
   /**
-   * Stops array is source of truth
-   * stop = { id, address, parts: {street,city,state,zip}, minutes }
+   * Advanced route settings
+   * - Loaded from backend goal defaults
+   * - Editable here so the user does not have to leave the Addresses page
+   */
+  const [returnToStart, setReturnToStart] = useState(false);
+  const [bufferMinutes, setBufferMinutes] = useState(0);
+  const [mpg, setMpg] = useState(25);
+  const [gasPrice, setGasPrice] = useState(3.5);
+
+  /**
+   * Stops array is the source of truth
+   * stop = { id, address, parts: { street, city, state, zip }, minutes }
    */
   const [stops, setStops] = useState([]);
 
-  // Derived: service time only (drive time is on results page)
+  /**
+   * Derived service time based only on stop minutes
+   * (drive time is calculated later on the Results page)
+   */
   const serviceMinutes = useMemo(
     () => stops.reduce((sum, s) => sum + Number(s.minutes || 0), 0),
     [stops]
   );
 
-  // Validation helpers for UX
+  /**
+   * Validation helpers for UX
+   */
   const startIsValid =
     startStreet.trim() &&
     startCity.trim() &&
@@ -82,6 +117,38 @@ export default function PlanBuilder() {
     startIsValid &&
     stops.length > 0;
 
+  /**
+   * Load saved goal defaults from backend
+   * so advanced options are pre-filled inside the plan flow.
+   */
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadGoalDefaults() {
+      try {
+        const data = await fetchGoals();
+
+        if (!cancelled) {
+          setReturnToStart(Boolean(data.returnToStart));
+          setBufferMinutes(Number(data.bufferMinutes || 0));
+          setMpg(Number(data.mpg || 25));
+          setGasPrice(Number(data.gasPrice || 3.5));
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    loadGoalDefaults();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /**
+   * Add a stop from the spreadsheet-like entry row
+   */
   function handleAddStop() {
     if (!stopRowIsValid) return;
 
@@ -95,13 +162,13 @@ export default function PlanBuilder() {
     const newStop = {
       id: Date.now(),
       address: formatAddress(parts),
-      parts, // ✅ structured for geocoding
+      parts,
       minutes: Number(stopMinutes),
     };
 
     setStops([...stops, newStop]);
 
-    // clear entry row
+    // Clear entry row
     setStopStreet("");
     setStopCity("");
     setStopState("");
@@ -109,10 +176,21 @@ export default function PlanBuilder() {
     setStopMinutes("");
   }
 
+  /**
+   * Remove a stop from the current plan
+   */
   function handleRemoveStop(id) {
     setStops(stops.filter((s) => s.id !== id));
   }
 
+  /**
+   * Save plan to backend
+   *
+   * FLOW:
+   * 1) Save current advanced options as goal defaults in backend
+   * 2) Save the new plan
+   * 3) Navigate to Results page
+   */
   async function handleSavePlan() {
     if (!canSave) return;
 
@@ -131,6 +209,13 @@ export default function PlanBuilder() {
     };
 
     try {
+      await updateGoals({
+        returnToStart,
+        bufferMinutes: Number(bufferMinutes),
+        mpg: Number(mpg),
+        gasPrice: Number(gasPrice),
+      });
+
       const saved = await createPlan(planPayload);
       navigate(`/plan/${saved.id}`);
     } catch (err) {
@@ -138,7 +223,9 @@ export default function PlanBuilder() {
     }
   }
 
-  // Right panel "map preview" — i’ll improve later (iframe/real map)
+  /**
+   * Right-side map preview query
+   */
   const previewQuery = encodeURIComponent(
     startIsValid
       ? formatAddress({
@@ -153,14 +240,14 @@ export default function PlanBuilder() {
   return (
     <div className="page">
       <div className="split">
-        {/* LEFT PANEL: Addresses */}
+        {/* LEFT PANEL: Address + stops + advanced options */}
         <div className="card">
           <h1 style={{ marginTop: 0 }}>Addresses</h1>
           <p className="muted" style={{ marginTop: 6 }}>
-            Step 1: Enter your start address and stops.
+            Step 1: Enter your start address, stops, and route assumptions.
           </p>
 
-          {/* Plan Name */}
+          {/* Plan name */}
           <div className="field">
             <label className="label">Plan Name</label>
             <input
@@ -171,20 +258,26 @@ export default function PlanBuilder() {
             />
           </div>
 
-          {/* Start Address */}
+          {/* Start address */}
           <div className="field">
             <label className="label">Start Location</label>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 10,
+              }}
+            >
               <input
                 type="text"
-                placeholder="Street (e.g., 123456)"
+                placeholder="Street"
                 value={startStreet}
                 onChange={(e) => setStartStreet(e.target.value)}
               />
               <input
                 type="text"
-                placeholder="City (e.g., Miami)"
+                placeholder="City"
                 value={startCity}
                 onChange={(e) => setStartCity(e.target.value)}
               />
@@ -211,7 +304,7 @@ export default function PlanBuilder() {
             )}
           </div>
 
-          {/* Stops Table */}
+          {/* Stops table */}
           <div className="field">
             <label className="label">Stops</label>
 
@@ -239,14 +332,17 @@ export default function PlanBuilder() {
                     <td>{s.parts?.zip || "-"}</td>
                     <td>{s.minutes}</td>
                     <td>
-                      <button className="button" onClick={() => handleRemoveStop(s.id)}>
+                      <button
+                        className="button"
+                        onClick={() => handleRemoveStop(s.id)}
+                      >
                         Remove
                       </button>
                     </td>
                   </tr>
                 ))}
 
-                {/* Entry row (spreadsheet style) */}
+                {/* Entry row */}
                 <tr>
                   <td>+</td>
                   <td>
@@ -305,13 +401,68 @@ export default function PlanBuilder() {
               </tbody>
             </table>
 
+            {/* Advanced options */}
+            <div className="card" style={{ marginTop: 16 }}>
+              <h3 style={{ marginTop: 0 }}>Advanced Options</h3>
+              <p className="muted" style={{ marginTop: 6 }}>
+                Route assumptions used for time and cost estimates.
+              </p>
+
+              <label className="row" style={{ marginTop: 10 }}>
+                <input
+                  type="checkbox"
+                  checked={returnToStart}
+                  onChange={(e) => setReturnToStart(e.target.checked)}
+                />
+                <span>Return to start (future)</span>
+              </label>
+
+              <div className="field">
+                <label className="label">Buffer minutes per stop</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={bufferMinutes}
+                  onChange={(e) => setBufferMinutes(e.target.value)}
+                />
+                <p className="hint">
+                  Extra time for parking, setup, or transitions.
+                </p>
+              </div>
+
+              <div className="field">
+                <label className="label">Vehicle MPG</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={mpg}
+                  onChange={(e) => setMpg(e.target.value)}
+                />
+              </div>
+
+              <div className="field">
+                <label className="label">Gas price ($/gallon)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={gasPrice}
+                  onChange={(e) => setGasPrice(e.target.value)}
+                />
+              </div>
+            </div>
+
             <div className="actions">
-              <button className="button primary" onClick={handleSavePlan} disabled={!canSave}>
+              <button
+                className="button primary"
+                onClick={handleSavePlan}
+                disabled={!canSave}
+              >
                 Save Plan
               </button>
 
-              <Link className="button" to="/goals">
-                Next: Goals
+              <Link className="button" to="/dashboard">
+                Back to Dashboard
               </Link>
             </div>
 
@@ -321,15 +472,20 @@ export default function PlanBuilder() {
           </div>
         </div>
 
-        {/* RIGHT PANEL: Map Preview (placeholder for now) */}
+        {/* RIGHT PANEL: Map preview */}
         <div className="card">
           <h2 style={{ marginTop: 0 }}>Map Preview</h2>
           <p className="muted">
-            i'll enhance this panel next (embed map / route preview).
+            I’ll enhance this panel later with a fuller map or route preview.
           </p>
 
-          <div style={{ border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, overflow: "hidden" }}>
-            {/* Quick embed (simple preview). i'll upgrade later. */}
+          <div
+            style={{
+              border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: 12,
+              overflow: "hidden",
+            }}
+          >
             <iframe
               title="Map Preview"
               width="100%"

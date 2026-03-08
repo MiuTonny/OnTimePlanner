@@ -69,7 +69,6 @@ export default function PlanResults() {
 
   /**
    * Derived: base service minutes from stop list.
-   * Not stored in state because it’s derived from plan.stops (source of truth).
    */
   const baseServiceMinutes = useMemo(() => {
     if (!plan || !Array.isArray(plan.stops)) return 0;
@@ -171,7 +170,7 @@ export default function PlanResults() {
 
   return (
     <div className="page">
-      <h1>Route Results</h1>
+      <h1>Route Summary</h1>
 
       <h2>{plan.name}</h2>
 
