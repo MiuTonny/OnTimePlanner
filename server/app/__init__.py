@@ -11,6 +11,8 @@ migrate = Migrate()
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
+    app.config["SECRET_KEY"] = "dev-secret-key"
+
 
     CORS(app, resources={r"/api/*": {"origins": "*"}})
 
@@ -20,9 +22,15 @@ def create_app():
     # register routes
     from .routes.plans import plans_bp
     from .routes.goals import goals_bp
+    from .routes.auth import auth_bp
 
     app.register_blueprint(plans_bp, url_prefix="/api")
     app.register_blueprint(goals_bp, url_prefix="/api")
+    app.register_blueprint(auth_bp, url_prefix="/api")
+
+    
+
+    
 
 
     return app

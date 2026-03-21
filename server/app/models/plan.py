@@ -7,6 +7,9 @@ class Plan(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
 
+    
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+
     start_location = db.Column(db.String(255), nullable=False)
     start_street = db.Column(db.String(120), nullable=False)
     start_city = db.Column(db.String(80), nullable=False)
