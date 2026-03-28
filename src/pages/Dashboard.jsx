@@ -3,17 +3,17 @@
  *
  * PURPOSE:
  * - Landing page of the app
- * - Displays saved plans from localStorage
+ * - Displays saved plans from backend API (instead of localStorage)
  * - Allows the user to:
  *   - Create a new plan
  *   - Open an existing plan
  *   - Delete a saved plan
  * - Shows an aggregated summary for the last 7 days
  *
- * WHY THIS MATTERS (teacher discussion):
- * - Demonstrates stateful UI based on persisted data
+ * WHY THIS MATTERS:
+ * - Demonstrates stateful UI based on backend data
  * - Demonstrates derived calculations (weekly totals) from stored metrics
- * - Keeps localStorage reads/writes in a storage utility (separation of concerns)
+ * - Shows separation of concerns (API layer vs UI)
  */
 
 import { Link } from "react-router-dom";
@@ -21,7 +21,7 @@ import { useEffect, useMemo, useState } from "react";
 import { fetchPlans, deletePlan } from "../services/api";
 
 /**
- * Format minutes as "1 hr 23 min" (better UX than raw minutes).
+ * Format minutes as "1 hr 23 min"
  */
 function formatDuration(totalMinutes) {
   const m = Number(totalMinutes) || 0;
@@ -34,8 +34,7 @@ function formatDuration(totalMinutes) {
 }
 
 /**
- * Safe date check: "is this plan within the last N days?"
- * We use createdAt if present; otherwise, metrics.updatedAt as fallback.
+ * Check if plan is within last N days
  */
 function isWithinLastDays(plan, days) {
   const source =
@@ -54,28 +53,32 @@ function isWithinLastDays(plan, days) {
 export default function Dashboard() {
   /**
    * plans state
-   * - Single source of truth for what we display on screen
-   * - Loaded from localStorage on mount and refreshed after delete
    */
   const [plans, setPlans] = useState([]);
 
   /**
+   * loading state
+   */
+  const [loading, setLoading] = useState(false);
+
+  /**
    * loadPlans
-   * - helper so we can reuse it on first render + after deletes + on refresh button
    */
   async function loadPlans() {
+    setLoading(true);
+
     try {
-      const stored = await fetchPlans();
-      setPlans(stored);
+      const data = await fetchPlans();
+      setPlans(data.items || []);
     } catch (err) {
       console.error(err);
+    } finally {
+      setLoading(false);
     }
   }
 
   /**
-   * useEffect
-   * - Run once when Dashboard mounts
-   * - Load stored plans from localStorage into state
+   * Load plans on mount
    */
   useEffect(() => {
     loadPlans();
@@ -83,10 +86,11 @@ export default function Dashboard() {
 
   /**
    * handleDelete
-   * - removePlan writes to localStorage but does NOT return the updated list
-   * - so we reload plans afterward to keep UI in sync
    */
   async function handleDelete(planId) {
+    const confirmDelete = window.confirm("Delete this plan?");
+    if (!confirmDelete) return;
+
     try {
       await deletePlan(planId);
       loadPlans();
@@ -96,8 +100,7 @@ export default function Dashboard() {
   }
 
   /**
-   * weeklyPlans (last 7 days)
-   * - Derived list used for the summary card
+   * weeklyPlans
    */
   const weeklyPlans = useMemo(() => {
     return plans.filter((p) => isWithinLastDays(p, 7));
@@ -105,20 +108,12 @@ export default function Dashboard() {
 
   /**
    * weeklyTotals
-   * - Derived aggregated totals from all plans in weeklyPlans
-   * - Uses persisted plan.metrics when available (computed in PlanResults)
-   *
-   * NOTE:
-   * - If a plan doesn't have metrics yet, we skip it in totals.
-   *   (Metrics are created after viewing Results and completing API fetch.)
    */
   const weeklyTotals = useMemo(() => {
     const totals = {
       plansCount: weeklyPlans.length,
-      plansWithMetrics: 0,
       miles: 0,
       driveMinutes: 0,
-      serviceMinutes: 0,
       totalMinutes: 0,
       gasCost: 0,
     };
@@ -126,11 +121,8 @@ export default function Dashboard() {
     for (const p of weeklyPlans) {
       if (!p.metrics) continue;
 
-      totals.plansWithMetrics += 1;
-
       totals.miles += Number(p.metrics.miles || 0);
       totals.driveMinutes += Number(p.metrics.driveMinutes || 0);
-      totals.serviceMinutes += Number(p.metrics.serviceMinutes || 0);
       totals.totalMinutes += Number(p.metrics.totalMinutes || 0);
       totals.gasCost += Number(p.metrics.gasCost || 0);
     }
@@ -142,70 +134,46 @@ export default function Dashboard() {
     <div className="page">
       <h1>OnTimePlanner</h1>
 
-      <p className="muted" style={{ marginTop: 6 }}>
+      <p className="muted">
         Build daily routes, estimate time, mileage, and cost.
       </p>
 
+      <p className="hint">
+        Review past routes and track your weekly performance.
+      </p>
+
       <div className="actions">
-        {/* Navigation to create new plan */}
         <Link className="button primary" to="/plan">
           Create a New Plan
         </Link>
 
-        <Link className="button" to="/goals">
-          Goals
+        <Link className="button" to="/reviews">
+          Reviews
         </Link>
 
-        {/* Useful for localStorage apps while testing */}
         <button className="button" onClick={loadPlans}>
           Refresh
         </button>
       </div>
 
-      {/* Weekly summary card */}
       <div className="card" style={{ marginTop: 14 }}>
-        <h3 style={{ marginTop: 0 }}>Weekly Summary (Last 7 days)</h3>
+        <h3>Weekly Summary (Last 7 days)</h3>
 
-        <p className="muted" style={{ marginTop: 6 }}>
-          Totals are based on plans that have route metrics calculated.
-          <br />
-          (Open a plan’s Results page to generate metrics.)
-        </p>
-
-        <ul style={{ marginBottom: 0 }}>
-          <li>
-            <strong>Plans created:</strong> {weeklyTotals.plansCount}
-          </li>
-          <li>
-            <strong>Plans with metrics:</strong> {weeklyTotals.plansWithMetrics}
-          </li>
-          <li>
-            <strong>Total miles:</strong> {weeklyTotals.miles.toFixed(1)} mi
-          </li>
-          <li>
-            <strong>Total drive time:</strong>{" "}
-            {formatDuration(weeklyTotals.driveMinutes)}
-          </li>
-          <li>
-            <strong>Total service time:</strong>{" "}
-            {formatDuration(weeklyTotals.serviceMinutes)}
-          </li>
-          <li>
-            <strong>Total week time:</strong>{" "}
-            {formatDuration(weeklyTotals.totalMinutes)}
-          </li>
-          <li>
-            <strong>Estimated gas cost:</strong>{" "}
-            ${weeklyTotals.gasCost.toFixed(2)}
-          </li>
+        <ul>
+          <li><strong>Plans:</strong> {weeklyTotals.plansCount}</li>
+          <li><strong>Miles:</strong> {weeklyTotals.miles.toFixed(1)} mi</li>
+          <li><strong>Drive:</strong> {formatDuration(weeklyTotals.driveMinutes)}</li>
+          <li><strong>Total:</strong> {formatDuration(weeklyTotals.totalMinutes)}</li>
+          <li><strong>Gas:</strong> ${weeklyTotals.gasCost.toFixed(2)}</li>
         </ul>
       </div>
 
-      {/* Saved plans list */}
       <h3 style={{ marginTop: 20 }}>Saved Plans</h3>
 
-      {plans.length === 0 ? (
-        <p>No saved plans yet. Create one to get started.</p>
+      {loading ? (
+        <p>Loading plans...</p>
+      ) : plans.length === 0 ? (
+        <p>No saved plans yet.</p>
       ) : (
         <div className="card">
           <table className="table">
@@ -214,56 +182,40 @@ export default function Dashboard() {
                 <th>Plan</th>
                 <th>Stops</th>
                 <th>Miles</th>
-                <th>Total Time</th>
+                <th>Total</th>
                 <th>Gas</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {plans.map((plan) => {
-                const miles =
-                  plan.metrics && typeof plan.metrics.miles === "number"
-                    ? plan.metrics.miles.toFixed(1)
-                    : "—";
-
-                const totalTime =
-                  plan.metrics && typeof plan.metrics.totalMinutes === "number"
-                    ? formatDuration(plan.metrics.totalMinutes)
-                    : "—";
-
-                const gas =
-                  plan.metrics && typeof plan.metrics.gasCost === "number"
-                    ? `$${plan.metrics.gasCost.toFixed(2)}`
-                    : "—";
-
-                return (
-                  <tr key={plan.id}>
-                    <td>
-                      <strong>{plan.name}</strong>
-                      <div className="muted" style={{ fontSize: "0.85rem" }}>
-                        {plan.createdAt ? new Date(plan.createdAt).toLocaleString() : ""}
-                      </div>
-                    </td>
-                    <td>{plan.stops?.length || 0}</td>
-                    <td>{miles}</td>
-                    <td>{totalTime}</td>
-                    <td>{gas}</td>
-                    <td>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <Link className="button" to={`/plan/${plan.id}`}>
-                          Open
-                        </Link>
-                        <button
-                          className="button"
-                          onClick={() => handleDelete(plan.id)}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+              {plans.map((plan) => (
+                <tr key={plan.id}>
+                  <td>{plan.name}</td>
+                  <td>{plan.stops?.length || 0}</td>
+                  <td>{plan.metrics?.miles?.toFixed?.(1) || "—"}</td>
+                  <td>
+                    {plan.metrics?.totalMinutes
+                      ? formatDuration(plan.metrics.totalMinutes)
+                      : "—"}
+                  </td>
+                  <td>
+                    {typeof plan.metrics?.gasCost === "number"
+                      ? `$${plan.metrics.gasCost.toFixed(2)}`
+                      : "—"}
+                  </td>
+                  <td>
+                    <Link className="button" to={`/plan/${plan.id}`}>
+                      Open
+                    </Link>
+                    <button
+                      className="button"
+                      onClick={() => handleDelete(plan.id)}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

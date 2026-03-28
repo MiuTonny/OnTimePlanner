@@ -4,18 +4,16 @@
  * PURPOSE:
  * - Load a saved plan by URL param (:id)
  * - Fetch external API data:
- *   1) Geocode start + stops (structured geocoding with fallbacks)
+ *   1) Geocode start + stops (handled in backend)
  *   2) Fetch route stats (distance + duration)
  * - Compute totals:
  *   - Service time (stop minutes) + buffer per stop (Goals)
  *   - Drive time (routing API)
  *   - Miles driven (routing API)
  *   - Gas estimate (Goals: MPG + gas price)
- * - Persist computed metrics back into localStorage so the Dashboard can aggregate
  *
  * SAFETY:
  * - Uses loading/error UI
- * - Timeout prevents infinite loading
  * - cancellation flag avoids updating state after unmount/navigation
  */
 
@@ -23,7 +21,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { fetchPlan, computePlanMetrics } from "../services/api";
 
-/** Format minutes into a readable string: 83 → "1 hr 23 min". */
+/** Format minutes into readable string */
 function formatDuration(totalMinutes) {
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
@@ -31,31 +29,46 @@ function formatDuration(totalMinutes) {
   if (m === 0) return `${h} hr`;
   return `${h} hr ${m} min`;
 }
+
 export default function PlanResults() {
   const { id } = useParams();
 
-  // Plan is loaded from backend and stored in React state
+  /**
+   * Plan state (comes from backend)
+   */
   const [plan, setPlan] = useState(null);
 
-  // Async UI states
+  /**
+   * Async UI states
+   */
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   /**
-   * Load the plan whenever the route id changes
-   * This avoids effects depending on unstable object references.
+   * Load plan from backend
    */
   useEffect(() => {
     let cancelled = false;
 
     async function loadPlan() {
+      setLoading(true);
+      setError("");
+
       try {
         const found = await fetchPlan(id);
-        if (!cancelled) setPlan(found);
+
+        if (!cancelled) {
+          setPlan(found);
+        }
+
       } catch (err) {
         if (!cancelled) {
           setError(err.message || "Failed to load plan.");
           setPlan(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
         }
       }
     }
@@ -68,18 +81,22 @@ export default function PlanResults() {
   }, [id]);
 
   /**
-   * Derived: base service minutes from stop list.
+   * Derived: base service time from stops
    */
   const baseServiceMinutes = useMemo(() => {
     if (!plan || !Array.isArray(plan.stops)) return 0;
-    return plan.stops.reduce((sum, s) => sum + Number(s.minutes || 0), 0);
+
+    return plan.stops.reduce(
+      (sum, s) => sum + Number(s.minutes || 0),
+      0
+    );
   }, [plan]);
 
   /**
-   * Fetch route stats after plan is loaded.
+   * Compute metrics (ONLY if not already present)
    */
   useEffect(() => {
-    if (!plan) return;
+    if (!plan || plan.metrics) return;
 
     let cancelled = false;
 
@@ -109,26 +126,35 @@ export default function PlanResults() {
       }
     }
 
-    if (!plan.metrics) {
-      run();
-    }
+    run();
 
     return () => {
       cancelled = true;
     };
 
-  }, [plan?.id, plan?.metrics]);
-
+  }, [plan?.id]);
 
   /**
-   * If the plan doesn't exist, show a friendly message
+   * If still loading
    */
-  if (!plan) {
+  if (loading && !plan) {
+    return (
+      <div className="page">
+        <h1>Route Results</h1>
+        <p>Loading plan...</p>
+      </div>
+    );
+  }
+
+  /**
+   * If no plan after loading
+   */
+  if (!loading && !plan) {
     return (
       <div className="page">
         <h1>Route Results</h1>
         <p>Plan not found.</p>
-        <Link className="button" to="/">
+        <Link className="button" to="/dashboard">
           Back to Dashboard
         </Link>
       </div>
@@ -136,41 +162,31 @@ export default function PlanResults() {
   }
 
   /**
-   * Display values:
-   * - Prefer persisted metrics if available
-   * - Otherwise fall back to routeStats/baseServiceMinutes
+   * Metrics (safe fallback)
    */
   const metrics = plan.metrics || null;
 
-  const driveMinutes =
-    metrics && typeof metrics.driveMinutes === "number"
-      ? metrics.driveMinutes
-      : 0;
-
-  const miles =
-    metrics && typeof metrics.miles === "number"
-      ? metrics.miles
-      : 0;
+  const driveMinutes = metrics?.driveMinutes ?? 0;
+  const miles = metrics?.miles ?? 0;
 
   const serviceMinutes =
-    metrics && typeof metrics.serviceMinutes === "number"
-      ? metrics.serviceMinutes
-      : baseServiceMinutes;
+    metrics?.serviceMinutes ?? baseServiceMinutes;
 
   const totalMinutes =
-    metrics && typeof metrics.totalMinutes === "number"
-      ? metrics.totalMinutes
-      : serviceMinutes + driveMinutes;
+    metrics?.totalMinutes ?? (serviceMinutes + driveMinutes);
 
   const gasCost =
-    metrics && typeof metrics.gasCost === "number"
+    typeof metrics?.gasCost === "number"
       ? metrics.gasCost
       : null;
-
 
   return (
     <div className="page">
       <h1>Route Summary</h1>
+
+      <p className="hint">
+        This summary helps you understand your full workday before starting.
+      </p>
 
       <h2>{plan.name}</h2>
 
@@ -192,36 +208,45 @@ export default function PlanResults() {
 
       {loading && <p>Loading route details…</p>}
 
-      {!loading && error && <p style={{ color: "crimson" }}>Error: {error}</p>}
+      {!loading && error && (
+        <p style={{ color: "crimson" }}>Error: {error}</p>
+      )}
 
-      {!loading && !error && metrics && (
+      {!loading && !error && (
         <ul>
           <li>
-            <strong>Service time:</strong> {formatDuration(serviceMinutes)}
-            {metrics && metrics.bufferMinutes ? (
-              <span className="muted"> (includes {metrics.bufferMinutes} min buffer/stop)</span>
+            <strong>Service time:</strong>{" "}
+            {formatDuration(serviceMinutes)}
+            {metrics?.bufferMinutes ? (
+              <span className="muted">
+                {" "}
+                (includes {metrics.bufferMinutes} min buffer/stop)
+              </span>
             ) : null}
           </li>
 
           <li>
-            <strong>Drive time (estimate):</strong> {formatDuration(driveMinutes)}
+            <strong>Drive time:</strong>{" "}
+            {formatDuration(driveMinutes)}
           </li>
 
           <li>
-            <strong>Miles (estimate):</strong> {miles.toFixed(1)} mi
+            <strong>Miles:</strong> {Number(miles || 0).toFixed(1)} mi
           </li>
 
           <li>
-            <strong>Total day time:</strong> {formatDuration(totalMinutes)}
+            <strong>Total day time:</strong>{" "}
+            {formatDuration(totalMinutes)}
           </li>
 
           <li>
             <strong>Estimated gas cost:</strong>{" "}
             {gasCost !== null ? `$${gasCost.toFixed(2)}` : "—"}
-            {metrics && metrics.mpg && metrics.gasPrice !== undefined ? (
+            {metrics?.mpg && metrics?.gasPrice !== undefined ? (
               <span className="muted">
                 {" "}
-                (MPG {metrics.mpg}, ${Number(metrics.gasPrice).toFixed(2)}/gal)
+                (MPG {metrics.mpg}, $
+                {Number(metrics.gasPrice).toFixed(2)}/gal)
               </span>
             ) : null}
           </li>
@@ -229,8 +254,12 @@ export default function PlanResults() {
       )}
 
       <div style={{ marginTop: 20 }}>
-        <Link className="button" to="/">
+        <Link className="button" to="/dashboard">
           Back to Dashboard
+        </Link>
+
+        <Link className="button primary" to="/reviews">
+          Continue → Reviews
         </Link>
       </div>
     </div>

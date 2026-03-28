@@ -14,7 +14,7 @@ def create_app():
     app.config["SECRET_KEY"] = "dev-secret-key"
 
 
-    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    CORS(app, resources={r"/api/*": {"origins": "http://localhost:5173"}}, supports_credentials=True)
 
     db.init_app(app)
     migrate.init_app(app, db)

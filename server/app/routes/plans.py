@@ -216,7 +216,6 @@ def compute_metrics(plan_id):
         base_service_minutes = sum(int(s.minutes or 0) for s in ordered_stops)
 
         settings = GoalSettings.query.first()
-
         buffer_per_stop = settings.buffer_minutes if settings else 0
         mpg = settings.mpg if settings else 25
         gas_price = settings.gas_price if settings else 3.5

@@ -18,7 +18,7 @@
  * - Improves the overall user flow for demo and presentation
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { createPlan, fetchGoals, updateGoals } from "../services/api";
 
@@ -48,6 +48,12 @@ function isValidState(state) {
 
 export default function PlanBuilder() {
   const navigate = useNavigate();
+
+  /**
+   * Ref for returning focus to the first stop input
+   * after a stop is added
+   */
+  const stopStreetRef = useRef(null);
 
   /**
    * Plan identity
@@ -80,6 +86,12 @@ export default function PlanBuilder() {
   const [bufferMinutes, setBufferMinutes] = useState(0);
   const [mpg, setMpg] = useState(25);
   const [gasPrice, setGasPrice] = useState(3.5);
+
+  /**
+   * UI feedback state
+   */
+  const [saving, setSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   /**
    * Stops array is the source of truth
@@ -166,7 +178,7 @@ export default function PlanBuilder() {
       minutes: Number(stopMinutes),
     };
 
-    setStops([...stops, newStop]);
+    setStops((currentStops) => [...currentStops, newStop]);
 
     // Clear entry row
     setStopStreet("");
@@ -174,13 +186,16 @@ export default function PlanBuilder() {
     setStopState("");
     setStopZip("");
     setStopMinutes("");
+
+    // Return focus to the first stop field
+    stopStreetRef.current?.focus();
   }
 
   /**
    * Remove a stop from the current plan
    */
   function handleRemoveStop(id) {
-    setStops(stops.filter((s) => s.id !== id));
+    setStops((currentStops) => currentStops.filter((s) => s.id !== id));
   }
 
   /**
@@ -189,10 +204,16 @@ export default function PlanBuilder() {
    * FLOW:
    * 1) Save current advanced options as goal defaults in backend
    * 2) Save the new plan
-   * 3) Navigate to Results page
+   * 3) Store the saved plan id + name for step navigation
+   * 4) Navigate to Results page
    */
   async function handleSavePlan() {
     if (!canSave) return;
+
+    setSaving(true);
+    setErrorMessage("");
+
+    const trimmedPlanName = planName.trim();
 
     const startParts = {
       street: startStreet.trim(),
@@ -202,7 +223,7 @@ export default function PlanBuilder() {
     };
 
     const planPayload = {
-      name: planName.trim(),
+      name: trimmedPlanName,
       startLocation: formatAddress(startParts),
       startParts,
       stops,
@@ -217,9 +238,19 @@ export default function PlanBuilder() {
       });
 
       const saved = await createPlan(planPayload);
+
+      /**
+       * Store last saved plan info so the Results step
+       * can link back to the most recent route summary
+       */
+      localStorage.setItem("lastPlanId", String(saved.id));
+      localStorage.setItem("lastPlanName", trimmedPlanName);
+
       navigate(`/plan/${saved.id}`);
     } catch (err) {
-      alert(err.message || "Failed to save plan.");
+      setErrorMessage(err.message || "Failed to save plan.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -252,7 +283,7 @@ export default function PlanBuilder() {
             <label className="label">Plan Name</label>
             <input
               type="text"
-              placeholder="e.g., Tuesday"
+              placeholder="e.g., Monday Route"
               value={planName}
               onChange={(e) => setPlanName(e.target.value)}
             />
@@ -347,6 +378,7 @@ export default function PlanBuilder() {
                   <td>+</td>
                   <td>
                     <input
+                      ref={stopStreetRef}
                       type="text"
                       placeholder="Street"
                       value={stopStreet}
@@ -401,6 +433,17 @@ export default function PlanBuilder() {
               </tbody>
             </table>
 
+            {!stopRowIsValid && (
+              <p className="hint">
+                Fill all stop fields correctly: street, city, 2-letter state,
+                5-digit ZIP, and minutes greater than 0.
+              </p>
+            )}
+
+            <p className="hint">
+              Stops added: <strong>{stops.length}</strong>
+            </p>
+
             {/* Advanced options */}
             <div className="card" style={{ marginTop: 16 }}>
               <h3 style={{ marginTop: 0 }}>Advanced Options</h3>
@@ -423,7 +466,7 @@ export default function PlanBuilder() {
                   type="number"
                   min="0"
                   value={bufferMinutes}
-                  onChange={(e) => setBufferMinutes(e.target.value)}
+                  onChange={(e) => setBufferMinutes(Number(e.target.value))}
                 />
                 <p className="hint">
                   Extra time for parking, setup, or transitions.
@@ -436,7 +479,7 @@ export default function PlanBuilder() {
                   type="number"
                   min="1"
                   value={mpg}
-                  onChange={(e) => setMpg(e.target.value)}
+                  onChange={(e) => setMpg(Number(e.target.value))}
                 />
               </div>
 
@@ -447,7 +490,7 @@ export default function PlanBuilder() {
                   min="0"
                   step="0.01"
                   value={gasPrice}
-                  onChange={(e) => setGasPrice(e.target.value)}
+                  onChange={(e) => setGasPrice(Number(e.target.value))}
                 />
               </div>
             </div>
@@ -456,15 +499,17 @@ export default function PlanBuilder() {
               <button
                 className="button primary"
                 onClick={handleSavePlan}
-                disabled={!canSave}
+                disabled={!canSave || saving}
               >
-                Save Plan
+                {saving ? "Saving..." : "Save Plan"}
               </button>
 
               <Link className="button" to="/dashboard">
                 Back to Dashboard
               </Link>
             </div>
+
+            {errorMessage && <p className="hint">{errorMessage}</p>}
 
             <p className="hint">
               Service time total: <strong>{serviceMinutes} min</strong>

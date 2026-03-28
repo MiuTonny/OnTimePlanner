@@ -1,3 +1,18 @@
+/**
+ * App
+ *
+ * PURPOSE:
+ * - Top-level application router
+ * - Defines public vs protected routes
+ * - Applies shared layout pieces (NavBar + StepHeader)
+ *
+ * WHY THIS MATTERS:
+ * - Centralizes routing logic in one place
+ * - Protects app pages so only authenticated users can access them
+ * - Keeps layout logic separate from page components
+ */
+
+import { useEffect, useState } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -5,42 +20,86 @@ import {
   Navigate,
   useLocation,
 } from "react-router-dom";
+
+import "./styles/app.css";
+
 import Dashboard from "./pages/Dashboard.jsx";
+import Reviews from "./pages/Reviews.jsx"; // ✅ renamed from Goals
+import Login from "./pages/Login.jsx";
 import PlanBuilder from "./pages/PlanBuilder.jsx";
 import PlanResults from "./pages/PlanResults.jsx";
-import Goals from "./pages/Goals.jsx";
-import Login from "./pages/Login.jsx";
+
 import StepHeader from "./components/StepHeader.jsx";
 import NavBar from "./components/NavBar.jsx";
+
+import { fetchMe } from "./services/api";
 
 /**
  * ProtectedRoute
  *
  * PURPOSE:
- * - Prevent access to app pages unless the user is logged in
- * - For project scope, login state is stored in localStorage
+ * - Prevent access to app pages unless the user is authenticated
+ * - Checks the current session by calling the backend /api/me route
+ *
+ * FLOW:
+ * - loading -> waiting for backend
+ * - authenticated -> render child page
+ * - unauthenticated -> redirect to /login
  */
 function ProtectedRoute({ children }) {
-  const isLoggedIn = localStorage.getItem("otp_logged_in") === "true";
-  return isLoggedIn ? children : <Navigate to="/login" replace />;
+  const [status, setStatus] = useState("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkAuth() {
+      try {
+        await fetchMe();
+
+        if (!cancelled) {
+          setStatus("authenticated");
+        }
+      } catch {
+        if (!cancelled) {
+          setStatus("unauthenticated");
+        }
+      }
+    }
+
+    checkAuth();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (status === "loading") {
+    return (
+      <div className="page">
+        <p>Checking session...</p>
+      </div>
+    );
+  }
+
+  return status === "authenticated"
+    ? children
+    : <Navigate to="/login" replace />;
 }
 
 /**
  * AppLayout
  *
  * PURPOSE:
- * - Show NavBar + StepHeader on app pages
- * - Hide them on the login page
+ * - Show shared navigation UI on protected app pages
+ * - Hide NavBar + StepHeader on login screen
  */
 function AppLayout() {
   const location = useLocation();
-  const isLoggedIn = localStorage.getItem("otp_logged_in") === "true";
   const isLoginPage = location.pathname === "/login";
-
 
   return (
     <>
-      {!isLoginPage && isLoggedIn && (
+      {!isLoginPage && (
         <>
           <NavBar />
           <StepHeader />
@@ -48,13 +107,13 @@ function AppLayout() {
       )}
 
       <Routes>
+        {/* Public route */}
         <Route path="/login" element={<Login />} />
 
-        <Route
-          path="/"
-          element={<Navigate to="/login" replace />}
-        />
+        {/* Default route */}
+        <Route path="/" element={<Navigate to="/login" replace />} />
 
+        {/* Protected routes */}
         <Route
           path="/dashboard"
           element={
@@ -74,10 +133,10 @@ function AppLayout() {
         />
 
         <Route
-          path="/goals"
+          path="/reviews"
           element={
             <ProtectedRoute>
-              <Goals />
+              <Reviews />
             </ProtectedRoute>
           }
         />
@@ -95,6 +154,9 @@ function AppLayout() {
   );
 }
 
+/**
+ * Root App component
+ */
 export default function App() {
   return (
     <BrowserRouter>
