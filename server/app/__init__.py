@@ -1,3 +1,5 @@
+import os
+
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
@@ -11,10 +13,15 @@ migrate = Migrate()
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
-    app.config["SECRET_KEY"] = "dev-secret-key"
 
+    # Uses SECRET_KEY from .env/environment instead of hardcoding it
+    app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key")
 
-    CORS(app, resources={r"/api/*": {"origins": "http://localhost:5173"}}, supports_credentials=True)
+    CORS(
+        app,
+        resources={r"/api/*": {"origins": "http://localhost:5173"}},
+        supports_credentials=True
+    )
 
     db.init_app(app)
     migrate.init_app(app, db)
@@ -28,8 +35,7 @@ def create_app():
     app.register_blueprint(goals_bp, url_prefix="/api")
     app.register_blueprint(auth_bp, url_prefix="/api")
 
-    
-
+    return app
     
 
 
